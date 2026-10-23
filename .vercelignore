@@ -1,0 +1,6 @@
+# server.js is the local dev server + file-cache proxy; it can't run as a
+# Vercel function (read-only FS, long-lived listen()). Deploy as static files;
+# the page falls back to calling Open-Meteo directly.
+server.js
+tools/
+.cache/
