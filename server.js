@@ -97,4 +97,4 @@ http
       res.end(data);
     });
   })
-  .listen(PORT, () => console.log(`Zephyr running at http://localhost:${PORT}/`));
+  .listen(PORT, () => console.log(`BMSK Wind Dashboard running at http://localhost:${PORT}/`));

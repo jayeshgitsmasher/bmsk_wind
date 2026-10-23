@@ -1,4 +1,4 @@
-# Zephyr — Windy-style weather map, focused on Bihar
+# BMSK Wind Dashboard — Windy-style weather map, focused on Bihar
 
 A Windy-like map built entirely on free, open forecast data: 31 layers, 6 global
 forecast models, a 16-day hourly timeline, animated wind particles, Bihar block and
