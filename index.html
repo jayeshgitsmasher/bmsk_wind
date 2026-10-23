@@ -50,10 +50,11 @@
       <div class="panel timeline">
         <button id="play" aria-label="Play">▶</button>
         <div class="track">
+          <!-- Rides above the slider handle; positioned in app.js. -->
+          <div class="time-bubble" id="time-label"></div>
           <input type="range" id="time" />
           <div class="days" id="days"></div>
         </div>
-        <div class="time-label" id="time-label"></div>
       </div>
       <div class="panel legend" id="legend" title="Click to change units"></div>
     </footer>

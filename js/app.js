@@ -445,12 +445,36 @@ function fmtTime(ms) {
   return new Date(ms).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
+const THUMB = 18; // px, matches --thumb in style.css
+
+// Horizontal centre of the slider thumb for a fraction 0..1 of the range, as CSS.
+const thumbCss = (frac) => `calc(${THUMB / 2}px + ${frac} * (100% - ${THUMB}px))`;
+
+// Keeps the time bubble centred over the thumb, clamped inside the track; the
+// bubble's arrow shifts by the clamped amount so it still points at the thumb.
+function placeBubble() {
+  const bubble = $('time-label');
+  const min = Number(slider.min);
+  const max = Number(slider.max);
+  const frac = max > min ? (Number(slider.value) - min) / (max - min) : 0;
+  const width = slider.clientWidth;
+  const x = THUMB / 2 + frac * (width - THUMB);
+  const half = bubble.offsetWidth / 2;
+  const left = Math.max(half, Math.min(width - half, x));
+  bubble.style.left = `${left}px`;
+  bubble.style.setProperty('--arrow', `${x - left}px`);
+  slider.style.setProperty('--fill', `${(x / width) * 100}%`);
+}
+
 function setTime(ms) {
   state.time = ms;
   slider.value = ms;
   $('time-label').textContent = fmtTime(ms);
+  placeBubble();
   layer.setTime(ms);
 }
+
+window.addEventListener('resize', placeBubble);
 
 function setupTimeline(times, first) {
   const start = times[0];
@@ -466,7 +490,7 @@ function setupTimeline(times, first) {
   for (const t of times) {
     const d = new Date(t);
     if (d.getHours() !== 12 || n++ % every) continue;
-    html += `<span style="left:${((t - start) / (end - start)) * 100}%">${d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' })}</span>`;
+    html += `<span style="left:${thumbCss((t - start) / (end - start))}">${d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' })}</span>`;
   }
   $('days').innerHTML = html;
 }

@@ -352,7 +352,7 @@ button {
 .readout {
   position: absolute;
   left: 0;
-  bottom: 58px;
+  bottom: 96px; /* clear of the time bubble above the slider */
   font-variant-numeric: tabular-nums;
   text-shadow: 0 1px 3px #000, 0 0 8px #000;
   white-space: pre;
@@ -385,9 +385,76 @@ button {
   padding-bottom: 14px;
 }
 
+/* Custom slider with a known thumb width, so the time bubble can follow the thumb. */
 #time {
+  --thumb: 18px;
+  display: block;
   width: 100%;
-  accent-color: var(--accent);
+  height: var(--thumb);
+  margin: 0;
+  background: none;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+#time::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(to right, var(--accent) var(--fill, 0%), rgba(255, 255, 255, 0.18) var(--fill, 0%));
+}
+
+#time::-moz-range-track {
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(to right, var(--accent) var(--fill, 0%), rgba(255, 255, 255, 0.18) var(--fill, 0%));
+}
+
+#time::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: var(--thumb);
+  height: var(--thumb);
+  margin-top: -6px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 3px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+
+#time::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 3px solid #fff;
+}
+
+.time-bubble {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  transform: translateX(-50%);
+  padding: 5px 10px;
+  border-radius: 7px;
+  background: var(--accent);
+  color: #111;
+  font-weight: 700;
+  font-size: 12px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+/* Arrow pointing at the thumb; --arrow shifts it when the bubble is clamped at an edge. */
+.time-bubble::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: calc(50% + var(--arrow, 0px));
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: var(--accent);
 }
 
 .days {
@@ -404,14 +471,6 @@ button {
   font-size: 11px;
   color: var(--muted);
   white-space: nowrap;
-}
-
-.time-label {
-  flex: none;
-  min-width: 120px;
-  text-align: right;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
 }
 
 .legend {
@@ -681,11 +740,10 @@ button {
     width: auto;
   }
   .readout {
-    bottom: 120px;
+    bottom: 160px;
   }
-  .time-label {
-    min-width: 0;
-    font-size: 12px;
+  .time-bubble {
+    font-size: 11px;
   }
   .wx-popup .leaflet-popup-content {
     width: 280px !important;
