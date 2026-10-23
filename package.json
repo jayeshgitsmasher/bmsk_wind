@@ -1,0 +1,9 @@
+{
+  "name": "zephyr-wind-map",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Windy-style animated wind and temperature map built on Open-Meteo data and Leaflet",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

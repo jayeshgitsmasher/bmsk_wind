@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Zephyr Wind Map</title>
+    <!-- server.js switches this to "on"; other static servers leave it off. -->
+    <meta name="zephyr-proxy" content="off" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f0b429' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='M3 8h11a3 3 0 1 0-3-3M3 12h16a3 3 0 1 1-3 3M3 16h8'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
+    <div id="map"></div>
+
+    <div class="brand">Zephyr</div>
+
+    <button class="panel menu-toggle" id="menu-toggle" aria-label="Layers">☰ Layers</button>
+
+    <div class="right-col">
+      <aside class="panel levels" id="levels" aria-label="Altitude"></aside>
+
+      <aside class="panel side">
+        <div id="modes" class="segmented" aria-label="View"></div>
+        <label class="model">
+          <span>Forecast model</span>
+          <select id="model"></select>
+        </label>
+        <div id="overlays" class="overlays"></div>
+        <div class="toggles">
+          <label class="toggle"><input type="checkbox" id="particles" checked /> Particles</label>
+          <label class="toggle"><input type="checkbox" id="enhance" checked /> Enhance contrast</label>
+          <label class="toggle"><input type="checkbox" id="blocks" checked /> Block boundaries</label>
+          <label class="toggle"><input type="checkbox" id="district-names" checked /> District names</label>
+        </div>
+      </aside>
+    </div>
+
+    <div class="status" id="status"></div>
+
+    <footer class="bottom">
+      <div class="readout" id="readout"></div>
+      <div class="panel timeline">
+        <button id="play" aria-label="Play">▶</button>
+        <div class="track">
+          <input type="range" id="time" />
+          <div class="days" id="days"></div>
+        </div>
+        <div class="time-label" id="time-label"></div>
+      </div>
+      <div class="panel legend" id="legend" title="Click to change units"></div>
+    </footer>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script type="module" src="js/app.js"></script>
+  </body>
+</html>
