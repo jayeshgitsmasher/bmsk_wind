@@ -1,9 +1,15 @@
-// Weather and air-quality data from Open-Meteo (free, no key, CC BY 4.0),
-// requested through the local caching proxy in server.js.
+// Weather and air-quality data from Open-Meteo (free, no key, CC BY 4.0).
 //
-// The map is sampled on a lattice snapped to fixed degree spacings, and each
-// (variable, point) series is cached individually so panning or switching
-// layers only fetches what is new.
+// The free tier has a daily call limit, so every unique request is made at
+// most once per day. Each (date, source, model, variable, point) series is
+// looked up in this order before anything goes to the network:
+//   1. memory  2. IndexedDB (store.js, survives reloads)  3. a request already in flight
+// Network requests are never cancelled, so a call that was paid for is always kept.
+//
+// The map is sampled on a lattice snapped to fixed degree spacings, so the
+// same points recur across pans, zooms and layers.
+
+import { today, getMany, putMany, addUsage, callWeight } from './store.js';
 
 const PROXY = { forecast: 'api/forecast', air: 'api/air' };
 const DIRECT = {
@@ -15,8 +21,9 @@ const DIRECT = {
 let useProxy = document.querySelector('meta[name="zephyr-proxy"]')?.content === 'on';
 const SOURCE_DAYS = { forecast: 16, air: 7 };
 const CHUNK = 100;
-const MAX_AGE = 60 * 60 * 1000;
 const SPACINGS = [0.1, 0.25, 0.5, 1, 2, 3, 5, 8, 12, 16, 20];
+// Point forecasts are snapped to this grid (~5 km) so nearby clicks share a cached response.
+const POINT_SNAP = 0.05;
 
 export const MODELS = [
   { id: 'best_match', label: 'Best match (16 days)' },
@@ -51,11 +58,27 @@ export function windVars(level) {
   return [`wind_speed_${level.wind}`, `wind_direction_${level.wind}`];
 }
 
-const cache = new Map();
+// key -> { key, date, t0, values: Float32Array } (same shape as the IndexedDB records)
+const memory = new Map();
+// key -> promise that settles when the request carrying that series finishes
+const inflight = new Map();
 
 const normLon = (lon) => ((((lon + 180) % 360) + 360) % 360) - 180;
 const modelFor = (src, model) => (src === 'air' ? 'cams' : model);
-const seriesKey = (src, model, name, lat, lon) => `${src}|${modelFor(src, model)}|${name}|${lat.toFixed(2)}|${normLon(lon).toFixed(2)}`;
+const seriesKey = (date, src, model, name, lat, lon) =>
+  `${date}|${src}|${modelFor(src, model)}|${name}|${lat.toFixed(2)}|${normLon(lon).toFixed(2)}`;
+
+const timesCache = new Map();
+// Hourly timestamps from t0; shared between series with the same span.
+function timesFor(t0, n) {
+  const k = `${t0}|${n}`;
+  let t = timesCache.get(k);
+  if (!t) {
+    t = Array.from({ length: n }, (_, i) => t0 + i * 3600000);
+    timesCache.set(k, t);
+  }
+  return t;
+}
 
 function lattice(bounds, fixedStep) {
   const west = bounds.getWest();
@@ -72,19 +95,20 @@ function lattice(bounds, fixedStep) {
   return { step, i0, j0, cols: i1 - i0 + 1, rows: j1 - j0 + 1 };
 }
 
-async function request(src, params, signal) {
+// Returns { data, billed }; billed is false when server.js answered from its own cache.
+async function request(src, params) {
   const query = new URLSearchParams(params);
-  let res = useProxy ? await fetch(`${PROXY[src]}?${query}`, { signal }) : null;
+  let res = useProxy ? await fetch(`${PROXY[src]}?${query}`) : null;
   if (!res || res.status === 404) {
     useProxy = false;
-    res = await fetch(`${DIRECT[src]}?${query}`, { signal });
+    res = await fetch(`${DIRECT[src]}?${query}`);
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     if (res.status === 429) throw new Error('Open-Meteo free rate limit reached — wait a minute, then pan to retry');
     throw new Error(body.reason || `Open-Meteo HTTP ${res.status}`);
   }
-  return res.json();
+  return { data: await res.json(), billed: res.headers.get('X-Cache') !== 'hit' };
 }
 
 function baseParams(src, model) {
@@ -96,84 +120,125 @@ function baseParams(src, model) {
   return p;
 }
 
-async function fetchChunk(src, model, names, points, signal) {
-  let data = await request(
-    src,
-    {
+const toValues = (arr) => Float32Array.from(arr, (v) => (v == null ? NaN : v));
+
+// One network request for `names` at `points`; results go to memory and IndexedDB.
+function fetchChunk(date, src, model, names, points) {
+  const keys = points.flatMap((p) => names.map((n) => seriesKey(date, src, model, n, p.lat, p.lon)));
+  const job = (async () => {
+    let { data, billed } = await request(src, {
       ...baseParams(src, model),
       latitude: points.map((p) => p.lat.toFixed(2)).join(','),
       longitude: points.map((p) => p.lon.toFixed(2)).join(','),
       hourly: names.join(','),
-    },
-    signal,
-  );
-  if (!Array.isArray(data)) data = [data];
-  const fetched = Date.now();
-  data.forEach((d, n) => {
-    const times = d.hourly.time.map((t) => Date.parse(`${t}Z`));
-    for (const name of names) {
-      cache.set(seriesKey(src, model, name, points[n].lat, points[n].lon), { fetched, times, values: d.hourly[name] });
-    }
-  });
+    });
+    if (!Array.isArray(data)) data = [data];
+    if (billed) addUsage({ calls: callWeight(points.length, names.length, SOURCE_DAYS[src]), fetched: keys.length });
+    else addUsage({ cached: keys.length });
+    const records = [];
+    data.forEach((d, n) => {
+      const t0 = Date.parse(`${d.hourly.time[0]}Z`);
+      for (const name of names) {
+        const key = seriesKey(date, src, model, name, points[n].lat, points[n].lon);
+        const rec = { key, date, t0, values: toValues(d.hourly[name] || []) };
+        memory.set(key, rec);
+        records.push(rec);
+      }
+    });
+    await putMany('series', records);
+  })().finally(() => keys.forEach((k) => inflight.delete(k)));
+  for (const k of keys) inflight.set(k, job);
+  return job;
 }
 
 /**
- * Fetches `vars` ([{ src, name }]) on a lattice covering `bounds`.
- * Returns { lon0, lat0, step, cols, rows, fields: { [name]: { times, data: Float32Array[] } } }.
+ * Loads `vars` ([{ src, name }]) on a lattice covering `bounds`, fetching only
+ * series not already cached today. Returns
+ * { lon0, lat0, step, cols, rows, fields: { [name]: { times, data: Float32Array[] } } }.
  */
-export async function fetchGrid(bounds, { model, vars }, signal, step) {
+export async function fetchGrid(bounds, { model, vars }, step) {
+  const date = today();
   const lat = lattice(bounds, step);
-  const now = Date.now();
   const points = [];
   for (let j = 0; j < lat.rows; j++) {
     for (let i = 0; i < lat.cols; i++) points.push({ lat: (lat.j0 + j) * lat.step, lon: (lat.i0 + i) * lat.step });
   }
-  const fresh = (src, name, p) => {
-    const hit = cache.get(seriesKey(src, model, name, p.lat, p.lon));
-    return hit && now - hit.fetched < MAX_AGE;
-  };
 
-  const jobs = [];
-  for (const src of new Set(vars.map((v) => v.src))) {
-    const names = vars.filter((v) => v.src === src).map((v) => v.name);
-    const seen = new Set();
-    const missing = points.filter((p) => {
-      const k = `${p.lat.toFixed(2)}|${normLon(p.lon).toFixed(2)}`;
-      if (seen.has(k) || names.every((n) => fresh(src, n, p))) return false;
-      seen.add(k);
-      return true;
-    });
-    for (let k = 0; k < missing.length; k += CHUNK) {
-      const chunk = missing.slice(k, k + CHUNK).map((p) => ({ lat: p.lat, lon: normLon(p.lon) }));
-      jobs.push(fetchChunk(src, model, names, chunk, signal));
+  // series key -> { src, name, point } for everything not in memory
+  const wanted = new Map();
+  for (const v of vars) {
+    for (const p of points) {
+      const key = seriesKey(date, v.src, model, v.name, p.lat, p.lon);
+      if (!memory.has(key) && !wanted.has(key)) wanted.set(key, { src: v.src, name: v.name, p });
     }
   }
-  await Promise.all(jobs);
+
+  const stored = await getMany('series', [...wanted.keys()]);
+  for (const [key, rec] of stored) {
+    memory.set(key, rec);
+    wanted.delete(key);
+  }
+  if (stored.size) addUsage({ cached: stored.size });
+
+  const waits = new Set();
+  for (const key of [...wanted.keys()]) {
+    if (inflight.has(key)) {
+      waits.add(inflight.get(key));
+      wanted.delete(key);
+    }
+  }
+
+  // Group the remaining points by source and by exactly which variables they miss,
+  // so no request carries a series that is already cached.
+  const groups = new Map();
+  for (const { src, name, p } of wanted.values()) {
+    const pk = `${p.lat.toFixed(2)}|${normLon(p.lon).toFixed(2)}`;
+    const id = `${src}|${pk}`;
+    if (!groups.has(id)) groups.set(id, { src, point: { lat: p.lat, lon: normLon(p.lon) }, names: new Set() });
+    groups.get(id).names.add(name);
+  }
+  const batches = new Map();
+  for (const { src, point, names } of groups.values()) {
+    const sorted = [...names].sort();
+    const id = `${src}|${sorted.join(',')}`;
+    if (!batches.has(id)) batches.set(id, { src, names: sorted, points: [] });
+    batches.get(id).points.push(point);
+  }
+  const jobs = [...waits];
+  for (const { src, names, points: pts } of batches.values()) {
+    for (let k = 0; k < pts.length; k += CHUNK) jobs.push(fetchChunk(date, src, model, names, pts.slice(k, k + CHUNK)));
+  }
+  const results = await Promise.allSettled(jobs);
+  const failed = results.find((r) => r.status === 'rejected');
 
   const fields = {};
-  for (const v of vars) fields[v.name] = assemble(v.src, model, v.name, points);
+  for (const v of vars) fields[v.name] = assemble(date, v.src, model, v.name, points);
+  if (failed && !Object.values(fields).some(Boolean)) throw failed.reason;
   return { lon0: lat.i0 * lat.step, lat0: lat.j0 * lat.step, step: lat.step, cols: lat.cols, rows: lat.rows, fields };
 }
 
 // Per-hour arrays (row-major, south to north), trimmed to the last hour with any data.
-function assemble(src, model, name, points) {
-  const series = points.map((p) => cache.get(seriesKey(src, model, name, p.lat, p.lon)));
-  const ref = series.find(Boolean);
+function assemble(date, src, model, name, points) {
+  const series = points.map((p) => memory.get(seriesKey(date, src, model, name, p.lat, p.lon)));
+  const ref = series.find((s) => s && s.values.length);
   if (!ref) return null;
+  const n = ref.values.length;
   let last = -1;
-  const data = ref.times.map((_, t) => {
+  const data = [];
+  for (let t = 0; t < n; t++) {
     const arr = new Float32Array(points.length).fill(NaN);
     series.forEach((s, idx) => {
-      const v = s?.values[t];
-      if (v != null) {
+      // Series fetched in different requests share the same hourly start on a given date.
+      const v = s ? s.values[t + Math.round((ref.t0 - s.t0) / 3600000)] : NaN;
+      if (v !== undefined && !Number.isNaN(v)) {
         arr[idx] = v;
         last = t;
       }
     });
-    return arr;
-  });
+    data.push(arr);
+  }
   if (last < 0) return null;
-  return { times: ref.times.slice(0, last + 1), data: data.slice(0, last + 1) };
+  return { times: timesFor(ref.t0, last + 1), data: data.slice(0, last + 1) };
 }
 
 // Wind as u/v components from speed + meteorological direction fields.
@@ -211,12 +276,41 @@ export function accumulateField(field, fromMs) {
   return { times: field.times, data };
 }
 
+const pointMemory = new Map();
+
+// One point request, cached per date + snapped location + variable set.
+async function cachedPoint(src, model, lat, lon, names) {
+  const date = today();
+  const key = `${date}|${src}|${modelFor(src, model)}|${lat.toFixed(2)}|${lon.toFixed(2)}|${[...names].sort().join(',')}`;
+  if (pointMemory.has(key)) return pointMemory.get(key);
+  const job = (async () => {
+    const stored = (await getMany('points', [key])).get(key);
+    if (stored) {
+      addUsage({ cached: 1 });
+      return stored.data;
+    }
+    const { data, billed } = await request(src, {
+      ...baseParams(src, model),
+      latitude: lat.toFixed(3),
+      longitude: lon.toFixed(3),
+      hourly: names.join(','),
+    });
+    addUsage(billed ? { calls: callWeight(1, names.length, SOURCE_DAYS[src]), fetched: 1 } : { cached: 1 });
+    await putMany('points', [{ key, date, data }]);
+    return data;
+  })();
+  pointMemory.set(key, job);
+  job.catch(() => pointMemory.delete(key)); // failed requests may be retried
+  return job;
+}
+
 /** Full point forecast: every forecast variable in `names`, plus air quality. */
 export async function fetchPoint(lat, lon, model, names, airNames) {
-  const loc = { latitude: lat.toFixed(3), longitude: normLon(lon).toFixed(3) };
+  const sLat = Math.round(lat / POINT_SNAP) * POINT_SNAP;
+  const sLon = Math.round(normLon(lon) / POINT_SNAP) * POINT_SNAP;
   const [wx, air] = await Promise.allSettled([
-    request('forecast', { ...baseParams('forecast', model), ...loc, hourly: names.join(',') }),
-    request('air', { ...baseParams('air', model), ...loc, hourly: airNames.join(',') }),
+    cachedPoint('forecast', model, sLat, sLon, names),
+    cachedPoint('air', model, sLat, sLon, airNames),
   ]);
   if (wx.status === 'rejected') throw wx.reason;
   const d = wx.value;

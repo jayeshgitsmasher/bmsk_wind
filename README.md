@@ -50,8 +50,26 @@ the app says so when a layer is missing for the chosen model.
 
 Weather: [Open-Meteo](https://open-meteo.com) (CC BY 4.0), air quality: Copernicus CAMS via
 Open-Meteo. The free tier is non-commercial, ~600 calls/minute and 10,000/day, and every grid
-point counts as a call (a Bihar layer is ~230 points). `server.js` proxies and caches all API
-responses in `.cache/` for an hour, so reloads and repeat views are free.
+point counts as a call (one Bihar layer ≈ 325 calls with the 16-day forecast).
+
+### API call budget: each unique request at most once per day
+
+| Layer | Where | Key | Kept until |
+| --- | --- | --- | --- |
+| Memory | browser tab | date, source, model, variable, point | page closes |
+| IndexedDB (`js/store.js`) | browser, any server incl. Live Server | same | the date changes (pruned on next start) |
+| In-flight dedupe | browser tab | same | the request finishes |
+| `server.js` proxy (`npm start` only) | `.cache/<date>-<hash>.json` | date + full request URL | the date changes |
+
+- Only missing series are requested: switching to a new layer fetches just that variable; wind
+  already loaded today is reused.
+- Requests are never cancelled when you switch layers quickly, so a call that was paid for is kept.
+- Point forecasts are snapped to a 0.05° (~5 km) grid, so nearby clicks share one cached response.
+- The side panel shows an estimate of today's Open-Meteo calls and the share served from cache.
+  **Clear cache** deletes the browser cache (forecasts are then fetched again).
+
+Caching by date means a forecast loaded in the morning is reused for the rest of that day,
+even though the models publish new runs every few hours.
 
 ## Boundary data
 

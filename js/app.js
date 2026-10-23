@@ -4,6 +4,7 @@ import { UNITS, GROUPS, OVERLAYS, findOverlay, overlayVar, usesLevel, formatValu
 import { gradientCss } from './colors.js';
 import { WeatherLayer } from './weather-layer.js';
 import { renderForecast, esc } from './forecast.js';
+import { readUsage, onUsage, pruneOldDates, clearAll } from './store.js';
 
 const MODES = [
   { id: 'bihar', label: 'Bihar' },
@@ -247,8 +248,9 @@ map.on('zoomend', updateBoundaryDetail);
 
 // ---- Data loading ----
 
+// Requests are never aborted (a call that was paid for is cached instead);
+// reqId only discards results of superseded loads.
 let reqId = 0;
-let controller = null;
 let loadedOnce = false;
 
 function status(msg, isError = false) {
@@ -262,8 +264,6 @@ const modelLabel = () => MODELS.find((m) => m.id === state.model).label.replace(
 
 async function load() {
   const id = ++reqId;
-  controller?.abort();
-  controller = new AbortController();
   const def = state.overlay;
   const [speedVar, dirVar] = windVars(state.level);
   const scalarVar = def.id === 'wind' ? null : overlayVar(def, state.level);
@@ -277,8 +277,8 @@ async function load() {
     const request = { model: state.model, vars };
     const g =
       state.mode === 'bihar'
-        ? await fetchGrid(BIHAR_BOUNDS.pad(0.04), request, controller.signal, BIHAR_STEP)
-        : await fetchGrid(map.getBounds(), request, controller.signal);
+        ? await fetchGrid(BIHAR_BOUNDS.pad(0.04), request, BIHAR_STEP)
+        : await fetchGrid(map.getBounds(), request);
     if (id !== reqId) return;
     const wind = windField(g.fields[speedVar], g.fields[dirVar]);
     let scalar = scalarVar ? g.fields[scalarVar] : null;
@@ -296,7 +296,7 @@ async function load() {
     else if (!wind) status(`No wind data from ${modelLabel()} at this altitude`, true);
     else status('');
   } catch (err) {
-    if (id === reqId && err.name !== 'AbortError') status(err.message, true);
+    if (id === reqId) status(err.message, true);
   }
 }
 
@@ -523,8 +523,24 @@ map.on('click', async (e) => {
   }
 });
 
+// ---- API usage (estimated Open-Meteo calls today; free tier ≈ 10,000/day) ----
+
+function renderUsage(u = readUsage()) {
+  const loads = u.fetched + u.cached;
+  const share = loads ? Math.round((u.cached / loads) * 100) : 0;
+  $('usage-text').textContent = `≈ ${Math.round(u.calls).toLocaleString()} API calls today · ${share}% loaded from cache`;
+}
+
+onUsage(renderUsage);
+$('clear-cache').addEventListener('click', async () => {
+  if (!confirm('Delete all cached forecasts? The next views will spend API calls again.')) return;
+  await clearAll();
+  location.reload();
+});
+
 renderControls();
 renderLegend();
+renderUsage();
 writeState();
-load();
+pruneOldDates().finally(load);
 loadBoundaries().catch((err) => status(`Could not load Bihar boundaries: ${err.message}`, true));

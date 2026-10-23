@@ -208,6 +208,23 @@ button {
   padding-top: 2px;
 }
 
+.usage {
+  border-top: 1px solid var(--panel-border);
+  margin-top: 4px;
+  padding: 6px 10px 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.usage button {
+  display: block;
+  margin-top: 4px;
+  padding: 0;
+  color: var(--accent);
+  font-size: 11px;
+  text-decoration: underline;
+}
+
 /* Bihar boundaries */
 
 .district-label {

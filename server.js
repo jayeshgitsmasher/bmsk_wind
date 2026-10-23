@@ -1,6 +1,8 @@
 // Zero-dependency static server (ES modules need http://, not file://) plus a
-// caching proxy for Open-Meteo, so reloads and repeat views don't spend the
-// free API quota. Cached responses live in .cache/ for an hour.
+// caching proxy for Open-Meteo, so repeat requests don't spend the free API
+// quota. Responses are cached date-wise in .cache/<YYYY-MM-DD>-<hash>.json:
+// each unique request goes upstream at most once per day, and earlier days
+// are deleted.
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -9,7 +11,6 @@ const crypto = require('crypto');
 const ROOT = __dirname;
 const PORT = Number(process.env.PORT) || 5173;
 const CACHE_DIR = path.join(ROOT, '.cache');
-const CACHE_TTL = 60 * 60 * 1000;
 const UPSTREAM = {
   '/api/forecast': 'https://api.open-meteo.com/v1/forecast',
   '/api/air': 'https://air-quality-api.open-meteo.com/v1/air-quality',
@@ -26,18 +27,33 @@ const TYPES = {
 
 fs.mkdirSync(CACHE_DIR, { recursive: true });
 const inflight = new Map();
+let prunedFor = '';
+
+function today() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Deletes cache files from earlier days (once per day).
+function pruneCache(date) {
+  if (prunedFor === date) return;
+  prunedFor = date;
+  for (const name of fs.readdirSync(CACHE_DIR)) {
+    if (!name.startsWith(`${date}-`)) fs.promises.unlink(path.join(CACHE_DIR, name)).catch(() => {});
+  }
+}
 
 async function proxy(res, url) {
-  const file = path.join(CACHE_DIR, `${crypto.createHash('sha1').update(url).digest('hex')}.json`);
+  const date = today();
+  pruneCache(date);
+  const file = path.join(CACHE_DIR, `${date}-${crypto.createHash('sha1').update(url).digest('hex')}.json`);
   try {
-    const st = await fs.promises.stat(file);
-    if (Date.now() - st.mtimeMs < CACHE_TTL) {
-      res.writeHead(200, { 'Content-Type': 'application/json', 'X-Cache': 'hit' });
-      res.end(await fs.promises.readFile(file));
-      return;
-    }
+    const body = await fs.promises.readFile(file);
+    res.writeHead(200, { 'Content-Type': 'application/json', 'X-Cache': 'hit' });
+    res.end(body);
+    return;
   } catch {
-    // not cached yet
+    // not cached today
   }
   let pending = inflight.get(url);
   if (!pending) {
