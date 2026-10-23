@@ -168,8 +168,9 @@ function unhover(lyr) {
   }
 }
 
+// latlng is null for the initial tooltip, before the mouse has moved over the block.
 function blockTip(p, latlng) {
-  const values = describe(latlng);
+  const values = latlng ? describe(latlng) : '';
   return `<b>${esc(p.Block)}</b><div class="tip-sub">${esc(p.District)} district · ${esc(p.Zone)}</div>${
     values ? `<div class="tip-val">${esc(values)}</div>` : ''
   }`;

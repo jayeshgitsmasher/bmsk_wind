@@ -148,7 +148,7 @@ export const WeatherLayer = L.Layer.extend({
 
   /** { u, v, value } at a lat/lng for the current time (NaN where missing), or null outside the grid. */
   valueAt(latlng) {
-    if (!this._grid) return null;
+    if (!this._grid || !latlng) return null;
     const out = [NaN, NaN];
     const hasWind = sampleWind(this._grid, this._wind, this._time, latlng.lat, latlng.lng, out);
     const value = this._scalarAt(latlng.lat, latlng.lng, hasWind ? out : null);
