@@ -6,6 +6,7 @@ import { WeatherLayer } from './weather-layer.js';
 import { esc } from './forecast.js';
 import { renderDetail, markTime, DETAIL_VARS } from './detail.js';
 import { readUsage, onUsage, pruneOldDates, clearAll } from './store.js';
+import { initMapLayers } from './map-layers.js';
 
 const MODES = [
   { id: 'bihar', label: 'Bihar' },
@@ -73,7 +74,7 @@ if (state.view) map.setView([state.view.lat, state.view.lon], state.view.zoom);
 else map.fitBounds(BIHAR_BOUNDS, { padding: [30, 30] });
 
 map.attributionControl.setPrefix(
-  '<a href="https://leafletjs.com">Leaflet</a> · Weather <a href="https://open-meteo.com">Open-Meteo</a>, air quality CAMS (CC BY 4.0)',
+  '<a href="https://leafletjs.com">Leaflet</a> · Weather <a href="https://open-meteo.com">Open-Meteo</a>, air quality CAMS (CC BY 4.0) · Layers <a href="https://mausamsewa.bihar.gov.in">BMSK</a>',
 );
 
 map.createPane('weather').style.zIndex = 350;
@@ -242,7 +243,7 @@ async function loadBoundaries() {
     { pane: 'mask', interactive: false, stroke: false, fillColor: '#05070b', fillOpacity: 0.6 },
   );
 
-  boundaries.districts.addTo(map);
+  if ($('districts').checked) boundaries.districts.addTo(map);
   boundaries.outline.addTo(map);
   updateBoundaryDetail();
   applyMode();
@@ -410,6 +411,37 @@ $('particles').addEventListener('change', (e) => layer.setParticles(e.target.che
 $('enhance').addEventListener('change', (e) => layer.setEnhance(e.target.checked));
 $('blocks').addEventListener('change', updateBoundaryDetail);
 $('district-names').addEventListener('change', updateBoundaryDetail);
+$('districts').addEventListener('change', (e) => {
+  if (!boundaries.districts) return;
+  if (e.target.checked) boundaries.districts.addTo(map);
+  else boundaries.districts.remove();
+});
+
+// Map layers panel: open on wide screens, folded on phones; the choice is remembered.
+{
+  const KEY = 'bmsk-map-layers-open';
+  const setOpen = (open) => {
+    $('map-layers').classList.toggle('collapsed', !open);
+    $('ml-head').setAttribute('aria-expanded', String(open));
+  };
+  let saved = null;
+  try {
+    saved = localStorage.getItem(KEY);
+  } catch {
+    // storage blocked
+  }
+  setOpen(saved ? saved === '1' : !matchMedia('(max-width: 720px)').matches);
+  $('ml-head').addEventListener('click', () => {
+    const open = $('map-layers').classList.contains('collapsed');
+    setOpen(open);
+    try {
+      localStorage.setItem(KEY, open ? '1' : '0');
+    } catch {
+      // storage blocked
+    }
+  });
+}
+initMapLayers(map, (msg) => status(msg, true));
 
 // ---- Legend (click to cycle units) ----
 

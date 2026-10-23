@@ -331,6 +331,176 @@ button {
   cursor: pointer;
 }
 
+/* Map layers panel (left of the altitude strip) */
+
+.map-layers {
+  width: 196px;
+  max-height: 100%;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.ml-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 10px;
+  font-weight: 600;
+  color: var(--text);
+  text-align: left;
+}
+
+.ml-head span {
+  flex: 1;
+}
+
+.ml-icon,
+.ml-chev {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ml-icon {
+  color: var(--accent);
+}
+
+.ml-chev {
+  color: var(--muted);
+  transition: transform 0.2s;
+}
+
+.map-layers.collapsed .ml-chev {
+  transform: rotate(-90deg);
+}
+
+.map-layers.collapsed .ml-body {
+  display: none;
+}
+
+.ml-body {
+  padding: 0 6px 6px;
+  border-top: 1px solid var(--panel-border);
+}
+
+.ml-title {
+  padding: 8px 6px 3px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.layer-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.layer-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.layer-item input {
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.layer-item.loading {
+  color: var(--muted);
+}
+
+.layer-item.loading::after {
+  content: '';
+  width: 10px;
+  height: 10px;
+  margin-left: auto;
+  border: 2px solid var(--muted);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: ml-spin 0.8s linear infinite;
+}
+
+@keyframes ml-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Swatches mirror how each layer is drawn on the map. */
+.sw {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 12px;
+  font-style: normal;
+}
+
+.sw-district {
+  border: 1.5px solid #fff;
+  border-radius: 2px;
+  opacity: 0.8;
+}
+
+.sw-block {
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 2px;
+}
+
+.sw-names {
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.sw-aws::before,
+.sw-arg::before {
+  content: '';
+  border-radius: 50%;
+  border: 1px solid #0b0e13;
+}
+
+.sw-aws::before {
+  width: 9px;
+  height: 9px;
+  background: #f0b429;
+}
+
+.sw-arg::before {
+  width: 6px;
+  height: 6px;
+  background: #7cc4ff;
+}
+
+.sw-nh {
+  height: 0;
+  border-top: 2px dashed #ff9f43;
+}
+
+.sw-roads {
+  height: 0;
+  border-top: 1.5px solid #d4c9b4;
+}
+
+.sw-rivers {
+  height: 8px;
+  border-radius: 4px;
+  background: #2bb3ff;
+  opacity: 0.75;
+}
+
 .levels {
   display: flex;
   flex-direction: column;
@@ -934,6 +1104,18 @@ button {
   }
   .side {
     width: 190px;
+  }
+  /* Too narrow for three columns: the layers panel sits on its own row above. */
+  .menu-open .right-col {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-content: flex-start;
+    overflow-y: auto;
+  }
+  .map-layers {
+    width: 100%;
+    max-width: 280px;
+    max-height: none;
   }
   .bottom {
     flex-direction: column;

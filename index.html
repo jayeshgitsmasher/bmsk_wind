@@ -27,6 +27,27 @@
     <button class="panel menu-toggle" id="menu-toggle" aria-label="Layers">☰ Layers</button>
 
     <div class="right-col">
+      <aside class="panel map-layers" id="map-layers" aria-label="Map layers">
+        <button type="button" class="ml-head" id="ml-head" aria-expanded="true" aria-controls="ml-body">
+          <svg class="ml-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Z" /><path d="m3 13 9 5 9-5" /></svg>
+          <span>Map layers</span>
+          <svg class="ml-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+        </button>
+        <div class="ml-body" id="ml-body">
+          <div class="ml-title">Boundaries</div>
+          <label class="layer-item"><input type="checkbox" id="districts" checked /><i class="sw sw-district"></i>District boundaries</label>
+          <label class="layer-item"><input type="checkbox" id="blocks" checked /><i class="sw sw-block"></i>Block boundaries</label>
+          <label class="layer-item"><input type="checkbox" id="district-names" checked /><i class="sw sw-names">Aa</i>District names</label>
+          <div class="ml-title">BMSK observations</div>
+          <label class="layer-item"><input type="checkbox" id="lyr-aws" /><i class="sw sw-aws"></i>Weather stations</label>
+          <label class="layer-item"><input type="checkbox" id="lyr-arg" /><i class="sw sw-arg"></i>Rain gauges</label>
+          <div class="ml-title">Infrastructure</div>
+          <label class="layer-item"><input type="checkbox" id="lyr-nh" /><i class="sw sw-nh"></i>National highways</label>
+          <label class="layer-item"><input type="checkbox" id="lyr-roads" /><i class="sw sw-roads"></i>Major roads</label>
+          <label class="layer-item"><input type="checkbox" id="lyr-rivers" /><i class="sw sw-rivers"></i>Rivers</label>
+        </div>
+      </aside>
+
       <aside class="panel levels" id="levels" aria-label="Altitude"></aside>
 
       <aside class="panel side">
@@ -39,8 +60,6 @@
         <div class="toggles">
           <label class="toggle"><input type="checkbox" id="particles" checked /> Particles</label>
           <label class="toggle"><input type="checkbox" id="enhance" checked /> Enhance contrast</label>
-          <label class="toggle"><input type="checkbox" id="blocks" checked /> Block boundaries</label>
-          <label class="toggle"><input type="checkbox" id="district-names" checked /> District names</label>
         </div>
         <div class="usage" title="Every unique forecast request is cached for the day, so repeat views cost no API calls">
           <span id="usage-text"></span>
