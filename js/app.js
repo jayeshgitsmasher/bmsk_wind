@@ -3,7 +3,8 @@ import { windFrom, compass } from './field.js';
 import { UNITS, GROUPS, OVERLAYS, findOverlay, overlayVar, usesLevel, formatValue } from './params.js';
 import { gradientCss } from './colors.js';
 import { WeatherLayer } from './weather-layer.js';
-import { renderForecast, esc } from './forecast.js';
+import { esc } from './forecast.js';
+import { renderDetail, markTime, DETAIL_VARS } from './detail.js';
 import { readUsage, onUsage, pruneOldDates, clearAll } from './store.js';
 
 const MODES = [
@@ -80,6 +81,7 @@ map.createPane('mask').style.zIndex = 380;
 map.createPane('boundaries').style.zIndex = 420;
 map.createPane('labels').style.zIndex = 450;
 map.createPane('districtLabels').style.zIndex = 460;
+map.createPane('pin').style.zIndex = 470;
 
 const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas';
 L.tileLayer(`${ESRI}/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}`, {
@@ -155,6 +157,17 @@ function describe(latlng) {
   return wind ? `${main} · wind ${wind}` : main;
 }
 
+let hovered = null;
+
+function unhover(lyr) {
+  boundaries.blocks.resetStyle(lyr);
+  lyr.closeTooltip();
+  if (hovered === lyr) {
+    hovered = null;
+    state.hoverBlock = null;
+  }
+}
+
 function blockTip(p, latlng) {
   const values = describe(latlng);
   return `<b>${esc(p.Block)}</b><div class="tip-sub">${esc(p.District)} district · ${esc(p.Zone)}</div>${
@@ -171,9 +184,13 @@ async function loadBoundaries() {
     pane: 'boundaries',
     style: BLOCK_STYLE,
     onEachFeature(feature, lyr) {
-      lyr.bindTooltip('', { sticky: true, className: 'block-tip', direction: 'top', offset: [0, -8] });
+      // Start with the block name so the tooltip is never an empty bubble.
+      lyr.bindTooltip(blockTip(feature.properties, null), { sticky: true, className: 'block-tip', direction: 'top', offset: [0, -8] });
       lyr.on({
         mouseover(e) {
+          // bringToFront can swallow the previous block's mouseout, so clear it here.
+          if (hovered && hovered !== e.target) unhover(hovered);
+          hovered = e.target;
           state.hoverBlock = feature.properties;
           e.target.setStyle(BLOCK_HOVER);
           e.target.bringToFront();
@@ -182,8 +199,7 @@ async function loadBoundaries() {
           e.target.setTooltipContent(blockTip(feature.properties, e.latlng));
         },
         mouseout(e) {
-          state.hoverBlock = null;
-          boundaries.blocks.resetStyle(e.target);
+          unhover(e.target);
         },
       });
     },
@@ -367,6 +383,7 @@ $('overlays').addEventListener('click', (e) => {
   renderLegend();
   writeState();
   load();
+  refreshDetail(); // the meteogram plots the active layer
   document.body.classList.remove('menu-open');
 });
 
@@ -377,12 +394,14 @@ $('levels').addEventListener('click', (e) => {
   renderControls();
   writeState();
   load();
+  refreshDetail();
 });
 
 $('model').addEventListener('change', (e) => {
   state.model = e.target.value;
   writeState();
   load();
+  refreshDetail();
 });
 
 $('menu-toggle').addEventListener('click', () => document.body.classList.toggle('menu-open'));
@@ -434,6 +453,7 @@ $('legend').addEventListener('click', () => {
   state.units[kind] = (state.units[kind] || 0) + 1;
   renderLegend();
   layer.redraw(); // isoline labels use the new unit
+  renderDetailPanel();
 });
 
 // ---- Timeline ----
@@ -472,6 +492,7 @@ function setTime(ms) {
   $('time-label').textContent = fmtTime(ms);
   placeBubble();
   layer.setTime(ms);
+  syncDetailTime();
 }
 
 window.addEventListener('resize', placeBubble);
@@ -520,31 +541,99 @@ map.on('mousemove', (e) => {
 });
 map.on('mouseout', () => ($('readout').textContent = ''));
 
-// ---- Point forecast: every parameter for the clicked spot ----
+// ---- Point forecast panel under the timeline (click anywhere on the map) ----
 
-map.on('click', async (e) => {
-  const block = state.hoverBlock;
-  const title = block ? `<div class="pf-place">${esc(block.Block)} · ${esc(block.District)}</div>` : '';
-  const popup = L.popup({ maxWidth: 380, className: 'wx-popup', autoPanPaddingTopLeft: [60, 60] })
-    .setLatLng(e.latlng)
-    .setContent(`<div class="pf pf-msg">${title}Loading forecast…</div>`)
-    .openOn(map);
-  const nameFor = (def) => overlayVar(def, state.level);
-  const names = new Set(['wind_speed_10m', 'wind_direction_10m', ...windVars(state.level)]);
+const detailEl = $('detail');
+const pin = L.circleMarker([0, 0], { pane: 'pin', radius: 7, color: '#fff', weight: 2.5, fillColor: '#f0b429', fillOpacity: 1, interactive: false });
+let detail = null; // { f, latlng, place, tab, req }
+let detailReq = 0;
+const nameFor = (def) => overlayVar(def, state.level);
+
+function setDetailOpen(open) {
+  if (document.body.classList.contains('detail-open') === open) return;
+  document.body.classList.toggle('detail-open', open);
+  map.invalidateSize();
+  placeBubble();
+}
+
+function renderDetailPanel(scroll = false) {
+  if (!detail?.f) return;
+  detailEl.innerHTML = renderDetail(detail.f, {
+    tab: detail.tab,
+    place: detail.place,
+    model: modelLabel(),
+    level: state.level,
+    def: state.overlay,
+    time: state.time,
+    unitFor,
+    nameFor,
+    chartWidth: Math.max(320, detailEl.clientWidth - 48),
+  });
+  const sel = detailEl.querySelector('.dt-table .sel');
+  const box = detailEl.querySelector('.dt-scroll');
+  if (scroll && sel && box) box.scrollLeft = sel.offsetLeft - box.clientWidth / 3;
+}
+
+async function openDetail(latlng, place) {
+  const id = ++detailReq;
+  detail = { f: null, latlng, place, tab: detail?.tab || 'basic' };
+  pin.setLatLng(latlng).addTo(map);
+  detailEl.innerHTML = `<div class="dt-msg">Loading forecast for ${esc(place)}…</div>`;
+  setDetailOpen(true);
+  const names = new Set(['wind_speed_10m', 'wind_direction_10m', ...windVars(state.level), ...DETAIL_VARS]);
   for (const o of OVERLAYS) if (o.src === 'forecast' && o.var) names.add(o.var);
-  const temp = findOverlay('temp');
-  names.add(nameFor(temp));
+  names.add(nameFor(findOverlay('temp')));
   if (state.overlay.src === 'forecast' && state.overlay.var) names.add(nameFor(state.overlay));
   const airNames = OVERLAYS.filter((o) => o.src === 'air').map((o) => o.var);
   try {
-    const f = await fetchPoint(e.latlng.lat, e.latlng.lng, state.model, [...names], airNames);
-    popup.setContent(
-      title +
-        renderForecast(f, { def: state.overlay, level: state.level, time: state.time, unitFor, nameFor }),
-    );
+    const f = await fetchPoint(latlng.lat, latlng.lng, state.model, [...names], airNames);
+    if (id !== detailReq || !detail) return;
+    detail.f = f;
+    renderDetailPanel(true);
   } catch (err) {
-    popup.setContent(`<div class="pf pf-msg error">${esc(err.message)}</div>`);
+    if (id === detailReq) detailEl.innerHTML = `<div class="dt-msg error">${esc(err.message)}</div>`;
   }
+}
+
+function closeDetail() {
+  detail = null;
+  detailReq++;
+  pin.remove();
+  setDetailOpen(false);
+}
+
+// Reloads the open panel, e.g. after the model or altitude changed.
+function refreshDetail() {
+  if (detail) openDetail(detail.latlng, detail.place);
+}
+
+// Keeps the panel's highlighted column (or meteogram marker) on the map time.
+function syncDetailTime() {
+  if (!detail?.f) return;
+  if (detail.tab === 'meteogram') renderDetailPanel();
+  else markTime(detailEl, detail.f, state.time);
+}
+
+detailEl.addEventListener('click', (e) => {
+  const tab = e.target.closest('[data-tab]')?.dataset.tab;
+  if (tab && detail) {
+    detail.tab = tab;
+    renderDetailPanel(true);
+    return;
+  }
+  if (e.target.closest('[data-close]')) {
+    closeDetail();
+    return;
+  }
+  // Clicking a column moves the map to that time.
+  const t = e.target.closest('[data-t]')?.dataset.t;
+  if (t) setTime(Number(t));
+});
+
+map.on('click', (e) => {
+  const b = state.hoverBlock;
+  const place = b ? `${b.Block} · ${b.District}` : `${e.latlng.lat.toFixed(2)}°, ${e.latlng.lng.toFixed(2)}°`;
+  openDetail(e.latlng, place);
 });
 
 // ---- API usage (estimated Open-Meteo calls today; free tier ≈ 10,000/day) ----

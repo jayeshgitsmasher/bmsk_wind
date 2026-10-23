@@ -262,12 +262,6 @@ button {
   font-weight: 600;
 }
 
-.pf-place {
-  font-weight: 700;
-  color: var(--accent);
-  margin-bottom: 4px;
-}
-
 .overlays button {
   display: block;
   width: 100%;
@@ -556,43 +550,260 @@ button {
   color: #c8d0dc !important;
 }
 
-.wx-popup .leaflet-popup-content-wrapper,
-.wx-popup .leaflet-popup-tip {
-  background: rgba(18, 22, 30, 0.95);
-  color: var(--text);
+/* Point-forecast panel under the timeline */
+
+:root {
+  --detail-h: 340px;
 }
 
-.wx-popup .leaflet-popup-content {
-  margin: 12px;
-  width: 340px !important;
+.detail {
+  display: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--detail-h);
+  z-index: 1002;
+  flex-direction: column;
+  background: #10141b;
+  border-top: 1px solid rgba(240, 180, 41, 0.35);
+  box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.45);
 }
 
-/* Point forecast */
+.detail-open .detail {
+  display: flex;
+}
 
-.pf-msg {
+/* The map, timeline and side controls make room for the panel. */
+.detail-open #map {
+  bottom: var(--detail-h);
+}
+
+.detail-open .bottom {
+  bottom: calc(var(--detail-h) + 24px);
+}
+
+.detail-open .right-col {
+  bottom: calc(var(--detail-h) + 110px);
+}
+
+.dt-msg {
+  padding: 16px 18px;
   color: var(--muted);
 }
 
-.pf-msg.error {
+.dt-msg.error {
   color: #ff9b9b;
 }
 
-.pf-now-val {
-  font-size: 18px;
-  font-weight: 700;
+.dt-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 12px 6px 16px;
+  border-bottom: 1px solid var(--panel-border);
+  flex: none;
 }
 
-.pf-now-val span {
-  color: var(--temp);
+.dt-title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
-.pf-meta {
+.dt-title b {
+  color: var(--accent);
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dt-title span {
   color: var(--muted);
   font-size: 11px;
-  margin-bottom: 4px;
+  white-space: nowrap;
 }
 
-.pf svg {
+.dt-tabs {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.dt-tabs button {
+  padding: 6px 12px;
+  border-radius: 999px;
+  color: var(--muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.dt-tabs button:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.dt-tabs button.active {
+  background: var(--accent);
+  color: #111;
+}
+
+.dt-close {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 15px;
+  color: var(--muted);
+}
+
+.dt-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+.dt-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.dt-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
+.dt-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dt-table th,
+.dt-table td {
+  min-width: 46px;
+  height: 26px;
+  padding: 0 4px;
+  text-align: center;
+  white-space: nowrap;
+  border-right: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.dt-table td {
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+}
+
+.dt-table td.empty {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.dt-table thead th {
+  position: sticky;
+  background: #10141b;
+  z-index: 1;
+}
+
+.dt-table thead tr:first-child th {
+  top: 0;
+}
+
+.dt-table thead tr:nth-child(2) th {
+  top: 26px;
+  color: var(--muted);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.dt-table thead small {
+  font-size: 9px;
+  margin-left: 1px;
+}
+
+.dt-day {
+  text-align: left !important;
+  padding-left: 8px !important;
+  font-weight: 700;
+  border-left: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+/* Row labels stay put while the hours scroll. */
+.dt-label {
+  position: sticky;
+  left: 0;
+  z-index: 2 !important;
+  min-width: 150px !important;
+  text-align: left !important;
+  padding-left: 16px !important;
+  background: #10141b;
+  color: var(--muted);
+  font-weight: 500;
+  box-shadow: 1px 0 0 rgba(255, 255, 255, 0.08);
+}
+
+.dt-unit {
+  font-size: 10px;
+  opacity: 0.8;
+}
+
+.dt-table .night {
+  background-color: rgba(0, 0, 0, 0.25);
+}
+
+.dt-table .now {
+  box-shadow: inset 2px 0 0 rgba(240, 180, 41, 0.6);
+}
+
+/* Column of the time selected on the timeline. */
+.dt-table .sel {
+  outline: 1px solid rgba(255, 255, 255, 0.55);
+  outline-offset: -1px;
+}
+
+.dt-table thead .sel {
+  color: #111 !important;
+  background: var(--accent) !important;
+  font-weight: 700 !important;
+}
+
+.dt-icon {
+  width: 24px;
+  height: 24px;
+  display: block;
+  margin: auto;
+}
+
+.dt-arrow {
+  display: block;
+  width: 16px;
+  height: 16px;
+  margin: auto;
+  fill: var(--wind);
+}
+
+.dt-note {
+  padding: 4px 16px 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.dt-chart {
+  padding: 8px 24px;
+  overflow: auto;
+}
+
+/* Meteogram */
+
+.dt-chart svg {
   display: block;
   width: 100%;
 }
@@ -668,54 +879,6 @@ button {
   stroke-width: 1.5;
 }
 
-.pf-when {
-  margin-top: 10px;
-  padding-top: 8px;
-  border-top: 1px solid var(--panel-border);
-  font-size: 11px;
-  color: var(--muted);
-}
-
-.pf-table {
-  max-height: 230px;
-  overflow-y: auto;
-  margin-top: 4px;
-  padding-right: 4px;
-  scrollbar-width: thin;
-}
-
-.pf-group {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-  margin: 8px 0 2px;
-}
-
-.pf-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 12px;
-}
-
-.pf-row:nth-child(odd) {
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.pf-row b {
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.pf-row.current {
-  background: rgba(240, 180, 41, 0.16);
-  color: var(--accent);
-}
-
 @media (max-width: 720px) {
   .menu-toggle {
     display: block;
@@ -745,7 +908,7 @@ button {
   .time-bubble {
     font-size: 11px;
   }
-  .wx-popup .leaflet-popup-content {
-    width: 280px !important;
+  :root {
+    --detail-h: 300px;
   }
 }

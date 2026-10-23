@@ -1,11 +1,8 @@
-// Point-forecast popup: a chart of wind plus the active layer over the whole
-// forecast, and a table of every parameter at the selected time.
+// Meteogram for a point forecast: wind (and gusts) plus the active layer over
+// the whole forecast, with direction arrows. Used by the detail panel.
 
-import { compass } from './field.js';
-import { GROUPS, OVERLAYS, formatValue } from './params.js';
+import { OVERLAYS } from './params.js';
 
-const W = 330;
-const H = 130;
 const PAD = { l: 30, r: 34, t: 10, b: 18 };
 
 export const esc = (s) =>
@@ -25,10 +22,8 @@ function path(times, values, x, y) {
   return d;
 }
 
-const hourIndex = (times, ms) => Math.round((ms - times[0]) / 3600000);
-
 // Hourly series of an overlay at the point, in base units, with its own time axis.
-function seriesFor(f, def, name, now) {
+export function seriesFor(f, def, name, now = Date.now()) {
   const air = def.src === 'air';
   const times = air ? f.airTimes : f.times;
   const raw = air ? f.air?.[name] : f.series[name];
@@ -39,7 +34,9 @@ function seriesFor(f, def, name, now) {
   return { times, values: raw.map((v, i) => (i < start ? 0 : (sum += v ?? 0))) };
 }
 
-export function renderForecast(f, { def, level, time, unitFor, nameFor }) {
+export function renderChart(f, { def, level, time, unitFor, nameFor, width = 330, height = 130 }) {
+  const W = width;
+  const H = height;
   const now = Date.now();
   const t0 = f.times[0];
   const t1 = f.times[f.times.length - 1];
@@ -77,7 +74,7 @@ export function renderForecast(f, { def, level, time, unitFor, nameFor }) {
   }
 
   const days = (t1 - t0) / 86400000;
-  const every = days > 8 ? 2 : 1;
+  const every = Math.max(1, Math.ceil((days * 52) / W));
   let grid = '';
   let dayN = 0;
   f.times.forEach((t) => {
@@ -85,46 +82,22 @@ export function renderForecast(f, { def, level, time, unitFor, nameFor }) {
     if (d.getHours() !== 0) return;
     grid += `<line x1="${x(t)}" x2="${x(t)}" y1="${PAD.t}" y2="${H - PAD.b}" class="pf-day"/>`;
     if (dayN++ % every === 0) {
-      grid += `<text x="${x(t) + 2}" y="${H - 5}" class="pf-axis">${esc(d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }))}</text>`;
+      grid += `<text x="${x(t) + 2}" y="${H - 5}" class="pf-axis">${esc(d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' }))}</text>`;
     }
   });
   const marker = (ms, cls) => (ms >= t0 && ms <= t1 ? `<line x1="${x(ms)}" x2="${x(ms)}" y1="${PAD.t}" y2="${H - PAD.b}" class="${cls}"/>` : '');
 
   const area = `${path(f.times, speed, x, yW)}L${x(t1)},${H - PAD.b}L${x(t0)},${H - PAD.b}Z`;
   let arrows = '';
-  const arrowStep = days > 8 ? 12 : 6;
+  const arrowStep = Math.max(3, Math.ceil((f.times.length * 14) / W));
   for (let i = 0; i < f.times.length; i += arrowStep) {
     if (dir[i] == null) continue;
     // Arrow points where the wind is blowing TO.
     arrows += `<g transform="translate(${x(f.times[i])},9) rotate(${dir[i] + 180})"><path d="M0,-6 L3.5,3 L0,1 L-3.5,3Z" class="pf-arrow"/></g>`;
   }
 
-  // Every parameter at the selected time.
-  const wi = hourIndex(f.times, time);
-  const rows = GROUPS.map((group) => {
-    const items = OVERLAYS.filter((o) => o.group === group)
-      .map((o) => {
-        let text;
-        if (o.id === 'wind') {
-          const s = speed[wi];
-          text = s == null ? '–' : `${formatValue(s, windUnit)} ${compass(dir[wi])}`;
-        } else {
-          const ser = seriesFor(f, o, o.var, now);
-          const v = ser ? ser.values[hourIndex(ser.times, time)] : null;
-          text = formatValue(v, unitFor(o.kind));
-        }
-        return `<div class="pf-row${o.id === def.id ? ' current' : ''}"><span>${esc(o.label)}</span><b>${esc(text)}</b></div>`;
-      })
-      .join('');
-    return `<div class="pf-group">${esc(group)}</div>${items}`;
-  }).join('');
-
-  const when = new Date(time).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-
   return `
-  <div class="pf">
-    <div class="pf-meta">${f.lat.toFixed(2)}°, ${f.lon.toFixed(2)}° · ${Math.round(f.elevation)} m · wind at ${esc(level.label)}</div>
-    <svg viewBox="0 0 ${W} 18" class="pf-arrows">${arrows}</svg>
+    <svg viewBox="0 0 ${W} 18" class="pf-arrows" preserveAspectRatio="none">${arrows}</svg>
     <svg viewBox="0 0 ${W} ${H}" class="pf-chart">
       ${grid}
       <path d="${area}" class="pf-wind-area"/>
@@ -138,11 +111,8 @@ export function renderForecast(f, { def, level, time, unitFor, nameFor }) {
       ${secAxis}
     </svg>
     <div class="pf-key">
-      <span class="k-wind">Wind (${esc(windUnit.id)})</span>
+      <span class="k-wind">Wind at ${esc(level.label)} (${esc(windUnit.id)})</span>
       ${gust ? '<span class="k-gust">Gusts</span>' : ''}
       <span class="k-temp">${esc(second.label)}${secUnit.id ? ` (${esc(secUnit.id)})` : ''}</span>
-    </div>
-    <div class="pf-when">All parameters · ${esc(when)}</div>
-    <div class="pf-table">${rows}</div>
-  </div>`;
+    </div>`;
 }
